@@ -1,104 +1,77 @@
-import axios from "axios";
+import yahooFinance from "yahoo-finance2";
 import { MACD, BollingerBands, ATR } from "technicalindicators";
 import { sendMessage } from "./whatsapp.js";
 import { sendTelegramMessage } from "./telegram.js";
 
 let monitoredForexCommodities = {
-  EURUSD: {
+  "EURUSD=X": {
     upperLimit: 1.2,
     lowerLimit: 1.1,
     historicalPrices: {},
     fetchType: "currency",
-    intervals: ["1d", "4h"],
+    intervals: ["1d", "15m"],
   },
-  USDJPY: {
+  "USDJPY=X": {
     upperLimit: 150,
     lowerLimit: 140,
     historicalPrices: {},
     fetchType: "currency",
-    intervals: ["1d", "4h"],
+    intervals: ["1d", "4h", "15m"],
   },
-  XAUUSD: {
+  "XAUUSD=X": {
     upperLimit: 2000,
     lowerLimit: 1800,
     historicalPrices: {},
     fetchType: "commodity",
-    intervals: ["1d"],
+    intervals: ["1d", "15m"],
   },
-  US30: {
+  "^DJI": {
     upperLimit: 35000,
     lowerLimit: 34000,
     historicalPrices: {},
     fetchType: "index",
-    intervals: ["1d"],
+    intervals: ["1d", "15m"],
   },
-  CRUDEOIL: {
+  "CL=F": {
     upperLimit: 80,
     lowerLimit: 70,
     historicalPrices: {},
     fetchType: "commodity",
-    intervals: ["1d", "1mo"],
+    intervals: ["1d", "15m"],
   },
 };
 
-const fetchHistoricalPrices = async (symbol, fetchType, interval) => {
-  const apiKey = process.env.ALPHA_VANTAGE_KEY;
+const fetchHistoricalPrices = async (symbol, interval) => {
+  try {
+    const options = {
+      period1: "2025-01-01", // 1 ano atrás
+      interval: interval, // "1d", "15m", etc.
+      range: interval === "1d" ? "1mo" : "1d", // Ajusta o intervalo de busca
+    };
 
-  // Escolher o endpoint com base no intervalo
-  let endpoint;
-  if (interval === "1d") {
-    endpoint = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&apikey=${apiKey}`;
-  } else if (interval === "1w") {
-    endpoint = `https://www.alphavantage.co/query?function=TIME_SERIES_WEEKLY&symbol=${symbol}&apikey=${apiKey}`;
-  } else if (interval === "1mo") {
-    endpoint = `https://www.alphavantage.co/query?function=TIME_SERIES_MONTHLY&symbol=${symbol}&apikey=${apiKey}`;
-  } else {
-    endpoint = `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${symbol}&interval=${interval}&apikey=${apiKey}`;
+    const result = await yahooFinance.chart(symbol, options);
+
+    if (!result || !result.meta) {
+      throw new Error(`Dados inválidos retornados para ${symbol}`);
+    }
+
+    return result.quotes.map((entry) => entry.close);
+  } catch (error) {
+    throw new Error(
+      `Erro ao buscar dados históricos para ${symbol}: ${error.message}`
+    );
   }
-
-  const response = await axios.get(endpoint);
-
-  // Interpretar a resposta com base no endpoint
-  const dataKey = Object.keys(response.data).find((key) =>
-    key.includes("Time Series")
-  );
-  if (!dataKey) {
-    throw new Error(`Intervalo ${interval} não suportado para ${symbol}`);
-  }
-
-  const prices = response.data[dataKey];
-  return Object.keys(prices).map((date) =>
-    parseFloat(prices[date]["4. close"])
-  );
 };
 
-
-const fetchPrice = async (symbol, fetchType) => {
-  const apiKey = process.env.ALPHA_VANTAGE_KEY;
-
-  const endpoints = {
-    currency: `https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&from_currency=${symbol.slice(
-      0,
-      3
-    )}&to_currency=${symbol.slice(3)}&apikey=${apiKey}`,
-    commodity: `https://www.alphavantage.co/query?function=COMMODITY_EXCHANGE_RATE&symbol=${symbol}&apikey=${apiKey}`,
-    index: `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${apiKey}`,
-  };
-
-  const response = await axios.get(endpoints[fetchType]);
-  if (fetchType === "currency") {
-    return parseFloat(
-      response.data["Realtime Currency Exchange Rate"]["5. Exchange Rate"]
+const fetchPrice = async (symbol) => {
+  try {
+    const quote = await yahooFinance.quote(symbol);
+    return quote.regularMarketPrice;
+  } catch (error) {
+    throw new Error(
+      `Erro ao buscar preço atual para ${symbol}: ${error.message}`
     );
-  } else if (fetchType === "commodity") {
-    return parseFloat(
-      response.data["Realtime Commodity Exchange Rate"]["5. Exchange Rate"]
-    );
-  } else if (fetchType === "index") {
-    return parseFloat(response.data["Global Quote"]["05. price"]);
   }
-
-  throw new Error(`Fetch type ${fetchType} não suportado para ${symbol}`);
 };
 
 export const monitorForexCommodities = async () => {
@@ -111,23 +84,71 @@ export const monitorForexCommodities = async () => {
           );
           config.historicalPrices[interval] = await fetchHistoricalPrices(
             symbol,
-            config.fetchType,
             interval
           );
         }
 
-        const currentPrice = await fetchPrice(symbol, config.fetchType);
+        const currentPrice = parseFloat(
+          config.historicalPrices[interval][ config.historicalPrices[interval].length - 1]).toFixed(4); 
+
         config.historicalPrices[interval].push(currentPrice);
-        if (config.historicalPrices[interval].length > 50)
+        if (config.historicalPrices[interval].length > 50) {
           config.historicalPrices[interval].shift();
+        }
 
         console.log(`Preço atual de ${symbol} (${interval}): $${currentPrice}`);
+
+        // Calcular Indicadores (MACD, Bollinger, ATR)
+        const macd = MACD.calculate({
+          values: config.historicalPrices[interval],
+          fastPeriod: 12,
+          slowPeriod: 26,
+          signalPeriod: 9,
+          SimpleMAOscillator: false,
+          SimpleMASignal: false,
+        });
+
+        const bollinger = BollingerBands.calculate({
+          period: 20,
+          values: config.historicalPrices[interval],
+          stdDev: 2,
+        });
+
+        const atr = ATR.calculate({
+          high: config.historicalPrices[interval],
+          low: config.historicalPrices[interval],
+          close: config.historicalPrices[interval],
+          period: 14,
+        });
+
+        const macdValue = macd[macd.length - 1];
+        const bollingerValue = bollinger[bollinger.length - 1];
+        const atrValue = atr[atr.length - 1];
+
+        // Alertas
+        if (macdValue && macdValue.histogram > 0) {
+          const alertMessage = `🚨 Alerta: ${symbol} em alta (MACD positivo). Preço atual: $${currentPrice}`;
+          await sendMessage(process.env.PhoneAlert, alertMessage);
+          await sendTelegramMessage(process.env.GuyChatId, alertMessage);
+        }
+
+        if (bollingerValue && currentPrice > bollingerValue.upper) {
+          const alertMessage = `⚠️ Alerta: ${symbol} ultrapassou a Banda Superior (Bollinger). Preço atual: $${currentPrice}`;
+          await sendMessage(process.env.PhoneAlert, alertMessage);
+          await sendTelegramMessage(process.env.GuyChatId, alertMessage);
+        }
+
+        if (atrValue && atrValue > config.upperLimit - config.lowerLimit) {
+          const alertMessage = `⚠️ Alerta: Alta volatilidade em ${symbol} (ATR elevado). Preço atual: $${currentPrice}`;
+          await sendMessage(process.env.PhoneAlert, alertMessage);
+          await sendTelegramMessage(process.env.GuyChatId, alertMessage);
+        }
       }
     }
+
   } catch (error) {
     console.error("Erro ao monitorar Forex e Commodities:", error);
   }
 };
-
 
 export default monitoredForexCommodities; // Exporta o objeto para consulta
