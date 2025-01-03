@@ -58,30 +58,58 @@ const fetchHistoricalPricesBinance = async (symbol, interval, limit = 50) => {
   }));
 };
 
+const fetchAllHistoricalPrices = async (symbols, interval) => {
+  try {
+    const promises = symbols.map((symbol) =>
+      fetchHistoricalPricesBinance(symbol, interval)
+    );
+    const results = await Promise.all(promises);
+
+    return symbols.reduce((acc, symbol, index) => {
+      acc[symbol] = results[index].map((candle) => candle.close);
+      return acc;
+    }, {});
+  } catch (error) {
+    console.error(
+      `Erro ao buscar históricos para o intervalo ${interval}:`,
+      error
+    );
+    throw error;
+  }
+};
+
 export const monitorCryptos = async () => {
   try {
+    const symbolsByInterval = {};
     for (const [symbol, config] of Object.entries(monitoredCryptos)) {
       for (const interval of config.intervals) {
+        if (!symbolsByInterval[interval]) symbolsByInterval[interval] = [];
+        symbolsByInterval[interval].push(symbol);
+      }
+    }
+
+    for (const [interval, symbols] of Object.entries(symbolsByInterval)) {
+      console.log(`Buscando histórico de preços (${interval}) para símbolos:`, symbols);
+
+      const prices = await fetchAllHistoricalPrices(symbols, interval);
+
+      symbols.forEach(async (symbol) => {
+        const config = monitoredCryptos[symbol];
         if (!config.historicalPrices[interval]) {
-          console.log(
-            `Buscando histórico de preços (${interval}) para ${symbol}...`
-          );
-          config.historicalPrices[interval] = (
-            await fetchHistoricalPricesBinance(symbol, interval)
-          ).map((candle) => candle.close);
+          config.historicalPrices[interval] = [];
         }
 
-        const currentPrice =
-          config.historicalPrices[interval][
-            config.historicalPrices[interval].length - 1
-          ];
-        config.historicalPrices[interval].push(currentPrice);
+        config.historicalPrices[interval].push(...prices[symbol]);
+
         if (config.historicalPrices[interval].length > 50)
-          config.historicalPrices[interval].shift();
+          config.historicalPrices[interval] = config.historicalPrices[interval].slice(-50);
+
+        const currentPrice = config.historicalPrices[interval][
+          config.historicalPrices[interval].length - 1
+        ];
 
         console.log(`Preço atual de ${symbol} (${interval}): $${currentPrice}`);
 
-        // Calcular Indicadores (MACD, Bollinger, ATR)
         const macd = MACD.calculate({
           values: config.historicalPrices[interval],
           fastPeriod: 12,
@@ -108,7 +136,6 @@ export const monitorCryptos = async () => {
         const bollingerValue = bollinger[bollinger.length - 1];
         const atrValue = atr[atr.length - 1];
 
-        // Alertas
         if (macdValue && macdValue.histogram > 0) {
           const alertMessage = `🚨 Alerta: ${symbol} em alta (MACD positivo). Preço atual: $${currentPrice}`;
           await sendMessage(process.env.PhoneAlert, alertMessage);
@@ -126,12 +153,11 @@ export const monitorCryptos = async () => {
           await sendMessage(process.env.PhoneAlert, alertMessage);
           await sendTelegramMessage(process.env.GuyChatId, alertMessage);
         }
-      }
+      });
     }
   } catch (error) {
     console.error("Erro ao monitorar criptomoedas:", error);
   }
 };
 
-
-export default monitoredCryptos; // Exporta o objeto para consulta
+export default monitoredCryptos;

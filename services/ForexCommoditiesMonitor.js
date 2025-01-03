@@ -11,42 +11,42 @@ let monitoredForexCommodities = {
     fetchType: "currency",
     intervals: ["1d", "15m"],
   },
-  "USDJPY=X": {
-    upperLimit: 150,
-    lowerLimit: 140,
-    historicalPrices: {},
-    fetchType: "currency",
-    intervals: ["1d", "4h", "15m"],
-  },
-  "XAUUSD=X": {
+  // "USDJPY": {
+  //   upperLimit: 150,
+  //   lowerLimit: 140,
+  //   historicalPrices: {},
+  //   fetchType: "currency",
+  //   intervals: ["1d", "4h", "15m"],
+  // },
+  "gold": {
     upperLimit: 2000,
     lowerLimit: 1800,
     historicalPrices: {},
     fetchType: "commodity",
     intervals: ["1d", "15m"],
   },
-  "^DJI": {
-    upperLimit: 35000,
-    lowerLimit: 34000,
-    historicalPrices: {},
-    fetchType: "index",
-    intervals: ["1d", "15m"],
-  },
-  "CL=F": {
-    upperLimit: 80,
-    lowerLimit: 70,
-    historicalPrices: {},
-    fetchType: "commodity",
-    intervals: ["1d", "15m"],
-  },
+  // "DJI": {
+  //   upperLimit: 35000,
+  //   lowerLimit: 34000,
+  //   historicalPrices: {},
+  //   fetchType: "index",
+  //   intervals: ["1d", "15m"],
+  // },
+  // "CL=F": {
+  //   upperLimit: 80,
+  //   lowerLimit: 70,
+  //   historicalPrices: {},
+  //   fetchType: "commodity",
+  //   intervals: ["1d", "15m"],
+  // },
 };
 
 const fetchHistoricalPrices = async (symbol, interval) => {
   try {
     const options = {
-      period1: "2025-01-01", // 1 ano atrás
-      interval: interval, // "1d", "15m", etc.
-      range: interval === "1d" ? "1mo" : "1d", // Ajusta o intervalo de busca
+      period1: "2025-01-01",
+      interval: interval,
+      range: interval === "1d" ? "1mo" : "1d",
     };
 
     const result = await yahooFinance.chart(symbol, options);
@@ -63,42 +63,59 @@ const fetchHistoricalPrices = async (symbol, interval) => {
   }
 };
 
-const fetchPrice = async (symbol) => {
+const fetchAllHistoricalPrices = async (symbols, interval) => {
   try {
-    const quote = await yahooFinance.quote(symbol);
-    return quote.regularMarketPrice;
-  } catch (error) {
-    throw new Error(
-      `Erro ao buscar preço atual para ${symbol}: ${error.message}`
+    const promises = symbols.map((symbol) =>
+      fetchHistoricalPrices(symbol, interval)
     );
+    const results = await Promise.all(promises);
+
+    return symbols.reduce((acc, symbol, index) => {
+      acc[symbol] = results[index];
+      return acc;
+    }, {});
+  } catch (error) {
+    console.error(
+      `Erro ao buscar históricos para o intervalo ${interval}:`,
+      error
+    );
+    throw error;
   }
 };
 
 export const monitorForexCommodities = async () => {
   try {
+    const symbolsByInterval = {};
     for (const [symbol, config] of Object.entries(monitoredForexCommodities)) {
       for (const interval of config.intervals) {
+        if (!symbolsByInterval[interval]) symbolsByInterval[interval] = [];
+        symbolsByInterval[interval].push(symbol);
+      }
+    }
+
+    for (const [interval, symbols] of Object.entries(symbolsByInterval)) {
+      console.log(`Buscando histórico de preços (${interval}) para símbolos:`, symbols);
+
+      const prices = await fetchAllHistoricalPrices(symbols, interval);
+
+      symbols.forEach(async (symbol) => {
+        const config = monitoredForexCommodities[symbol];
         if (!config.historicalPrices[interval]) {
-          console.log(
-            `Buscando histórico de preços (${interval}) para ${symbol}...`
-          );
-          config.historicalPrices[interval] = await fetchHistoricalPrices(
-            symbol,
-            interval
-          );
+          config.historicalPrices[interval] = [];
         }
 
-        const currentPrice = parseFloat(
-          config.historicalPrices[interval][ config.historicalPrices[interval].length - 1]).toFixed(4); 
+        config.historicalPrices[interval].push(...prices[symbol]);
 
-        config.historicalPrices[interval].push(currentPrice);
         if (config.historicalPrices[interval].length > 50) {
-          config.historicalPrices[interval].shift();
+          config.historicalPrices[interval] = config.historicalPrices[interval].slice(-50);
         }
+
+        const currentPrice = config.historicalPrices[interval][
+          config.historicalPrices[interval].length - 1
+        ];
 
         console.log(`Preço atual de ${symbol} (${interval}): $${currentPrice}`);
 
-        // Calcular Indicadores (MACD, Bollinger, ATR)
         const macd = MACD.calculate({
           values: config.historicalPrices[interval],
           fastPeriod: 12,
@@ -125,7 +142,6 @@ export const monitorForexCommodities = async () => {
         const bollingerValue = bollinger[bollinger.length - 1];
         const atrValue = atr[atr.length - 1];
 
-        // Alertas
         if (macdValue && macdValue.histogram > 0) {
           const alertMessage = `🚨 Alerta: ${symbol} em alta (MACD positivo). Preço atual: $${currentPrice}`;
           await sendMessage(process.env.PhoneAlert, alertMessage);
@@ -143,12 +159,11 @@ export const monitorForexCommodities = async () => {
           await sendMessage(process.env.PhoneAlert, alertMessage);
           await sendTelegramMessage(process.env.GuyChatId, alertMessage);
         }
-      }
+      });
     }
-
   } catch (error) {
     console.error("Erro ao monitorar Forex e Commodities:", error);
   }
 };
 
-export default monitoredForexCommodities; // Exporta o objeto para consulta
+export default monitoredForexCommodities;
