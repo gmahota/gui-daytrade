@@ -13,7 +13,13 @@ export const generateCryptoChart = async (symbol, interval,data, indicators) => 
     type: "line",
     data: {
       labels: data.timestamps.map(
-        (timestamp) => new Date(timestamp).toLocaleDateString("en-GB") // Formata as datas como DD/MM/YY
+        (timestamp) =>
+          new Date(timestamp).toLocaleString("pt-PT", {
+            day: "2-digit",
+            month: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+          }) // Formata as datas como DD/MM/YY
       ),
       datasets: [
         {

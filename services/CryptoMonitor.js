@@ -1,6 +1,6 @@
 import axios from "axios";
 import { RSI, MACD, BollingerBands, ATR } from "technicalindicators";
-import { sendMessage , sendImage} from "./whatsapp.js";
+import { sendMessage, sendImage } from "./whatsapp.js";
 import { sendTelegramMessage, sendTelegramImage } from "./telegram.js";
 import { generateCryptoChart } from "./chartGenerator.js";
 
@@ -9,20 +9,14 @@ let monitoredCryptos = {
     upperLimit: 79600,
     lowerLimit: 77000,
     historicalPrices: {},
-    intervals: ["1d", "4h"],
+    intervals: ["15m", "4h"],
   },
   ETHUSDT: {
     upperLimit: 3500,
     lowerLimit: 3400,
     historicalPrices: {},
-    intervals: ["1d", "1h"],
-  },
-  XRPUSDT: {
-    upperLimit: 0.55,
-    lowerLimit: 0.5,
-    historicalPrices: {},
-    intervals: ["1d", "1m"],
-  },
+    intervals: ["15m", "4h"],
+  }
 };
 
 export const setCryptoLimits = (symbol, upperLimit, lowerLimit) => {
@@ -56,6 +50,8 @@ const fetchHistoricalPricesBinance = async (symbol, interval, limit = 50) => {
     low: parseFloat(candle[3]),
     close: parseFloat(candle[4]),
     volume: parseFloat(candle[5]),
+    buyVolume: candle[4] >= candle[1] ? parseFloat(candle[5]) : 0,
+    sellVolume: candle[4] < candle[1] ? parseFloat(candle[5]) : 0,
   }));
 };
 
@@ -116,6 +112,22 @@ export const monitorCryptos = async () => {
           config.historicalPrices[interval][
             config.historicalPrices[interval].length - 1
           ];
+
+        const maxPrice = Math.max(...config.historicalPrices[interval]);
+        const minPrice = Math.min(...config.historicalPrices[interval]);
+        const avgPrice = (
+          config.historicalPrices[interval].reduce((a, b) => a + b, 0) /
+          config.historicalPrices[interval].length
+        ).toFixed(2);
+
+        const totalBuyVolume = data.reduce(
+          (acc, candle) => acc + candle.buyVolume,
+          0
+        );
+        const totalSellVolume = data.reduce(
+          (acc, candle) => acc + candle.sellVolume,
+          0
+        );
 
         console.log(`Preço atual de ${symbol} (${interval}): $${currentPrice}`);
 
@@ -193,11 +205,30 @@ export const monitorCryptos = async () => {
           const imagePath = `./content/${symbol}_${interval}.png`;
           const caption = `📊 Aqui está o gráfico atualizado para ${symbol}. Verifique os indicadores e tendências!`;
 
+          // Gera relatório com detalhes adicionais
+          const explanation = `Relatório para ${symbol} (${interval}):
+- Preço Atual: $${currentPrice}
+- Máximo: $${maxPrice}
+- Mínimo: $${minPrice}
+- Médio: $${avgPrice}
+- Volume Total de Compras: ${totalBuyVolume.toFixed(2)}
+- Volume Total de Vendas: ${totalSellVolume.toFixed(2)}
+- MACD: ${macdValue?.histogram?.toFixed(2)}
+- Bollinger Bands: Superior - $${bollingerValue?.upper?.toFixed(
+            2
+          )}, Inferior - $${bollingerValue?.lower?.toFixed(2)}
+- RSI: ${rsi[rsi.length - 1]?.toFixed(2)}
+- ATR: ${atrValue?.toFixed(2)}
+
+Gráfico anexado.`;
+
           // Enviar via WhatsApp
           await sendImage(process.env.PhoneAlert, imagePath, caption);
+          await sendMessage(process.env.PhoneAlert, explanation);
 
           // Enviar via Telegram
           await sendTelegramImage(process.env.GuyChatId, imagePath, caption);
+          await sendTelegramMessage(process.env.GuyChatId, explanation);
         }
       });
     }
