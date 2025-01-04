@@ -31,13 +31,13 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
 
-// Agendamento dos monitores
-// cron.schedule('*/5 * * * *', async () => {
-//   console.log('Monitorando criptomoedas...');
-//   await monitorCryptos();
-// });
+//Agendamento dos monitores
+cron.schedule('*/5 * * * *', async () => {
+  console.log('Monitorando criptomoedas...');
+  await monitorCryptos();
+});
 
-cron.schedule('*/1 * * * *', async () => {
+cron.schedule('*/15 * * * *', async () => {
   console.log('Monitorando Forex e commodities...');
   await monitorForexCommodities();
 });

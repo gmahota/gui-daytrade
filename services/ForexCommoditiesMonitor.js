@@ -17,7 +17,7 @@ let monitoredForexCommodities = {
     historicalPrices: {},
     intervals: ["1d", "15m"],
   },
-  "gold": {
+  gold: {
     upperLimit: 2000,
     lowerLimit: 1800,
     historicalPrices: {},
@@ -35,6 +35,18 @@ let monitoredForexCommodities = {
     historicalPrices: {},
     intervals: ["1d", "15m"],
   },
+};
+
+export const setForexLimits = (symbol, upperLimit, lowerLimit) => {
+  monitoredForexCommodities[symbol] = {
+    ...monitoredForexCommodities[symbol],
+    upperLimit,
+    lowerLimit,
+  };
+  console.log(
+    `Configurações atualizadas para ${symbol}:`,
+    monitoredForexCommodities[symbol]
+  );
 };
 
 const fetchHistoricalPricesYahoo = async (symbol, interval) => {
@@ -63,7 +75,6 @@ const fetchHistoricalPricesYahoo = async (symbol, interval) => {
         sellVolume: entry.close < entry.open ? entry.volume : 0,
       }))
       .filter((candle) => candle.close !== null && candle.close !== 0);
-
   } catch (error) {
     throw new Error(
       `Erro ao buscar dados históricos para ${symbol}: ${error.message}`
@@ -100,23 +111,12 @@ export const monitorForexCommodities = async () => {
           config.timestamps = [];
         }
 
-        // Atualiza os preços e timestamps
-        config.historicalPrices[interval] = data
-          .map((candle) => candle.close);
+        config.historicalPrices[interval] = data.map((candle) => candle.close);
         config.timestamps[interval] = data.map((candle) => candle.time);
 
-        const currentPrice =
-          config.historicalPrices[interval][
-            config.historicalPrices[interval].length - 1
-          ];
-
+        const currentPrice = config.historicalPrices[interval].slice(-1)[0];
         const maxPrice = Math.max(...config.historicalPrices[interval]);
         const minPrice = Math.min(...config.historicalPrices[interval]);
-
-        console.log(config.timestamps[interval]);
-
-        console.log(`Minimo de ${symbol} (${interval}): $${minPrice}`);
-
         const avgPrice = (
           config.historicalPrices[interval].reduce((a, b) => a + b, 0) /
           config.historicalPrices[interval].length
@@ -131,8 +131,6 @@ export const monitorForexCommodities = async () => {
           0
         );
 
-        console.log(`Preço atual de ${symbol} (${interval}): $${currentPrice}`);
-
         const macd = MACD.calculate({
           values: config.historicalPrices[interval],
           fastPeriod: 12,
@@ -146,6 +144,11 @@ export const monitorForexCommodities = async () => {
           stdDev: 2,
         });
 
+        const rsi = RSI.calculate({
+          values: config.historicalPrices[interval],
+          period: 14,
+        });
+
         const atr = ATR.calculate({
           high: config.historicalPrices[interval],
           low: config.historicalPrices[interval],
@@ -153,90 +156,166 @@ export const monitorForexCommodities = async () => {
           period: 14,
         });
 
-        const rsi = RSI.calculate({
-          values: config.historicalPrices[interval],
-          period: 14,
-        });
-
-        // Gerar gráfico com os timestamps e indicadores
         await generateCryptoChart(
-          symbol,
-          interval,
-          {
-            timestamps: config.timestamps[interval],
-          },
-          {
-            prices: config.historicalPrices[interval],
-            macd,
-            bollinger,
-            rsi,
-          }
-        );
+                  symbol,
+                  interval,
+                  {
+                    timestamps: config.timestamps[interval],
+                  },
+                  {
+                    prices: config.historicalPrices[interval],
+                    macd,
+                    bollinger,
+                    rsi,
+                  }
+                );
 
         const macdValue = macd[macd.length - 1];
-        const bollingerValue = bollinger[bollinger.length - 1];
-        const atrValue = atr[atr.length - 1];
-
-        var sendAlert = false;
-
-        if (macdValue && macdValue.histogram > 0) {
-          const alertMessage = `🚨 Alerta: ${symbol} em alta (MACD positivo). Preço atual: $${currentPrice}`;
-          await sendMessage(process.env.PhoneAlert, alertMessage);
-          await sendTelegramMessage(process.env.GuyChatId, alertMessage);
-
-          sendAlert = true;
-        }
-
-        if (bollingerValue && currentPrice > bollingerValue.upper) {
-          const alertMessage = `⚠️ Alerta: ${symbol} ultrapassou a Banda Superior (Bollinger). Preço atual: $${currentPrice}`;
-          await sendMessage(process.env.PhoneAlert, alertMessage);
-          await sendTelegramMessage(process.env.GuyChatId, alertMessage);
-
-          sendAlert = true;
-        }
-
-        if (atrValue && atrValue > config.upperLimit - config.lowerLimit) {
-          const alertMessage = `⚠️ Alerta: Alta volatilidade em ${symbol} (ATR elevado). Preço atual: $${currentPrice}`;
-          await sendMessage(process.env.PhoneAlert, alertMessage);
-          await sendTelegramMessage(process.env.GuyChatId, alertMessage);
-
-          sendAlert = true;
-        }
-
-        if (sendAlert) {
-          const imagePath = `./content/${symbol}_${interval}.png`;
-          const caption = `📊 Aqui está o gráfico atualizado para ${symbol}. Verifique os indicadores e tendências!`;
-
-          // Gera relatório com detalhes adicionais
-          const explanation = `Relatório para ${symbol} (${interval}):
-- Preço Atual: $${currentPrice}
-- Máximo: $${maxPrice}
-- Mínimo: $${minPrice}
-- Médio: $${avgPrice}
-- Volume Total de Compras: ${totalBuyVolume.toFixed(2)}
-- Volume Total de Vendas: ${totalSellVolume.toFixed(2)}
-- MACD: ${macdValue?.histogram?.toFixed(2)}
-- Bollinger Bands: Superior - $${bollingerValue?.upper?.toFixed(
-            2
-          )}, Inferior - $${bollingerValue?.lower?.toFixed(2)}
-- RSI: ${rsi[rsi.length - 1]?.toFixed(2)}
-- ATR: ${atrValue?.toFixed(2)}
-
-Gráfico anexado.`;
-
-          // Enviar via WhatsApp
-          await sendImage(process.env.PhoneAlert, imagePath, caption);
-          await sendMessage(process.env.PhoneAlert, explanation);
-
-          // Enviar via Telegram
-          await sendTelegramImage(process.env.GuyChatId, imagePath, caption);
-          await sendTelegramMessage(process.env.GuyChatId, explanation);
-        }
-      });
-    }
-  } catch (error) {
-    console.error("Erro ao monitorar Forex e Commodities:", error);
-  }
-};
-
-export default monitoredForexCommodities;
+                const bollingerValue = bollinger[bollinger.length - 1];
+                const atrValue = parseFloat(atr[atr.length - 1]);
+                const rsiValue = parseFloat(rsi[rsi.length - 1]);
+        
+                let hasAlert = false; // Adicionado para rastrear alertas
+        
+                let explanation = `Relatório para ${symbol} (${interval}):\n`;
+        
+                if (macdValue && macdValue.histogram > 0) {
+                  hasAlert = true;
+                  const entryPrice =
+                    parseFloat(currentPrice) + parseFloat(atrValue) * 0.5;
+                  const targetPrice = entryPrice + parseFloat(atrValue) * 2;
+                  const stopLoss =
+                    parseFloat(currentPrice) - parseFloat(atrValue) * 1.5;
+                  explanation += `- MACD positivo: Tendência de alta detectada. Sugestão de Compra: Entrar acima de $${entryPrice.toFixed(
+                    2
+                  )}, Alvo: $${targetPrice.toFixed(2)}, Stop Loss: $${stopLoss.toFixed(
+                    2
+                  )}.\n`;
+                }
+        
+                if (macdValue && macdValue.histogram < 0) {
+                  hasAlert = true;
+                  const entryPrice =
+                    parseFloat(currentPrice) - parseFloat(atrValue) * 0.5;
+                  const targetPrice = entryPrice - parseFloat(atrValue) * 2;
+                  const stopLoss =
+                    parseFloat(currentPrice) + parseFloat(atrValue) * 1.5;
+                  explanation += `- MACD negativo: Tendência de baixa detectada. Sugestão de Venda: Entrar abaixo de $${entryPrice.toFixed(
+                    2
+                  )}, Alvo: $${targetPrice.toFixed(2)}, Stop Loss: $${stopLoss.toFixed(
+                    2
+                  )}.\n`;
+                }
+        
+                if (bollingerValue) {
+                  if (currentPrice > parseFloat(bollingerValue.upper)) {
+                    hasAlert = true;
+                    const entryPrice =
+                      parseFloat(currentPrice) + parseFloat(atrValue) * 0.2;
+                    const targetPrice =
+                      entryPrice +
+                      (parseFloat(bollingerValue.upper) -
+                        parseFloat(bollingerValue.lower));
+                    const stopLoss =
+                      entryPrice -
+                      (parseFloat(bollingerValue.upper) -
+                        parseFloat(bollingerValue.lower)) /
+                        2;
+                    explanation += `- Preço acima da banda superior (Bollinger): Possível sobrecompra. Sugestão de Consolidação: Entrar acima de $${entryPrice.toFixed(
+                      2
+                    )}, Alvo: $${targetPrice.toFixed(
+                      2
+                    )}, Stop Loss: $${stopLoss.toFixed(2)}.\n`;
+                  } else if (currentPrice < parseFloat(bollingerValue.lower)) {
+                    hasAlert = true;
+                    const entryPrice =
+                      parseFloat(currentPrice) - parseFloat(atrValue) * 0.2;
+                    const targetPrice =
+                      entryPrice -
+                      (parseFloat(bollingerValue.upper) -
+                        parseFloat(bollingerValue.lower));
+                    const stopLoss =
+                      entryPrice +
+                      (parseFloat(bollingerValue.upper) -
+                        parseFloat(bollingerValue.lower)) /
+                        2;
+                    explanation += `- Preço abaixo da banda inferior (Bollinger): Possível sobrevenda. Sugestão de Consolidação: Entrar abaixo de $${entryPrice.toFixed(
+                      2
+                    )}, Alvo: $${targetPrice.toFixed(
+                      2
+                    )}, Stop Loss: $${stopLoss.toFixed(2)}.\n`;
+                  }
+                }
+        
+                if (rsiValue > 70) {
+                  hasAlert = true;
+                  const entryPrice =
+                    parseFloat(currentPrice) - parseFloat(atrValue) * 0.5;
+                  const targetPrice = entryPrice - parseFloat(atrValue) * 2;
+                  const stopLoss =
+                    parseFloat(currentPrice) + parseFloat(atrValue) * 1.5;
+                  explanation += `- RSI elevado (${rsiValue.toFixed(
+                    2
+                  )}): Mercado em sobrecompra. Sugestão de Venda: Entrar abaixo de $${entryPrice.toFixed(
+                    2
+                  )}, Alvo: $${targetPrice.toFixed(2)}, Stop Loss: $${stopLoss.toFixed(
+                    2
+                  )}.\n`;
+                }
+        
+                if (rsiValue < 30) {
+                  hasAlert = true;
+                  const entryPrice =
+                    parseFloat(currentPrice) + parseFloat(atrValue) * 0.5;
+                  const targetPrice = entryPrice + parseFloat(atrValue) * 2;
+                  const stopLoss =
+                    parseFloat(currentPrice) - parseFloat(atrValue) * 1.5;
+                  explanation += `- RSI baixo (${rsiValue.toFixed(
+                    2
+                  )}): Mercado em sobrevenda. Sugestão de Compra: Entrar acima de $${entryPrice.toFixed(
+                    2
+                  )}, Alvo: $${targetPrice.toFixed(2)}, Stop Loss: $${stopLoss.toFixed(
+                    2
+                  )}.\n`;
+                }
+        
+                if (atrValue && atrValue > config.upperLimit - config.lowerLimit) {
+                  hasAlert = true;
+                  explanation += `- ATR elevado: Alta volatilidade detectada.\n`;
+                }
+        
+                // Condição para envio de mensagens e gráficos
+                if (hasAlert) {
+                  const caption =
+                    `📊 Gráfico para ${symbol} (${interval}):\n` +
+                    `- Preço Atual: $${currentPrice}\n` +
+                    `- Máximo: $${maxPrice}\n` +
+                    `- Mínimo: $${minPrice}\n` +
+                    `- Médio: $${avgPrice}\n` +
+                    `- Volume Total de Compras: ${totalBuyVolume.toFixed(2)}\n` +
+                    `- Volume Total de Vendas: ${totalSellVolume.toFixed(2)}\n` +
+                    `- MACD: ${macdValue?.histogram?.toFixed(2)}\n` +
+                    `- Bollinger Bands: Superior - $${parseFloat(
+                      bollingerValue?.upper
+                    ).toFixed(2)}, Inferior - $${parseFloat(
+                      bollingerValue?.lower
+                    ).toFixed(2)}\n` +
+                    `- RSI: ${rsiValue?.toFixed(2)}\n` +
+                    `- ATR: ${atrValue?.toFixed(2)}\n`;
+        
+                  // Defina o caminho para o gráfico gerado
+                  const imagePath = `./content/${symbol}_${interval}.png`;
+                  await sendImage(process.env.PhoneAlert, imagePath, caption);
+                  await sendMessage(process.env.PhoneAlert, explanation);
+                  await sendTelegramImage(process.env.GuyChatId, imagePath, caption);
+                  await sendTelegramMessage(process.env.GuyChatId, explanation);
+                }
+              });
+            }
+          } catch (error) {
+            console.error("Erro ao monitorar criptomoedas:", error);
+          }
+        };
+        
+        export default monitoredForexCommodities;
+        
