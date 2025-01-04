@@ -17,6 +17,15 @@ export const sendTelegramMessage = async (chatId, message) => {
   }
 };
 
+export const sendTelegramImage = async (chatId, imagePath, caption) => {
+  try {
+    await bot.sendPhoto(chatId, imagePath, { caption });
+    console.log(`Imagem enviada para o chatId ${chatId} com sucesso.`);
+  } catch (error) {
+    console.error(`Erro ao enviar imagem para o chatId ${chatId}:`, error);
+  }
+};
+
 // Opcional: Registrar comandos ou ouvir mensagens
 bot.on("message", (msg) => {
   const chatId = msg.chat.id;

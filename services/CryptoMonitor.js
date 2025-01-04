@@ -1,7 +1,8 @@
 import axios from "axios";
-import { MACD, BollingerBands, ATR } from "technicalindicators";
-import { sendMessage } from "./whatsapp.js";
-import { sendTelegramMessage } from "./telegram.js";
+import { RSI, MACD, BollingerBands, ATR } from "technicalindicators";
+import { sendMessage , sendImage} from "./whatsapp.js";
+import { sendTelegramMessage, sendTelegramImage } from "./telegram.js";
+import { generateCryptoChart } from "./chartGenerator.js";
 
 let monitoredCryptos = {
   BTCUSDT: {
@@ -49,7 +50,7 @@ const fetchHistoricalPricesBinance = async (symbol, interval, limit = 50) => {
   );
 
   return response.data.map((candle) => ({
-    time: new Date(candle[0]),
+    time: new Date(candle[0]).toISOString(),
     open: parseFloat(candle[1]),
     high: parseFloat(candle[2]),
     low: parseFloat(candle[3]),
@@ -89,24 +90,32 @@ export const monitorCryptos = async () => {
     }
 
     for (const [interval, symbols] of Object.entries(symbolsByInterval)) {
-      console.log(`Buscando histórico de preços (${interval}) para símbolos:`, symbols);
+      console.log(
+        `Buscando histórico de preços (${interval}) para símbolos:`,
+        symbols
+      );
 
-      const prices = await fetchAllHistoricalPrices(symbols, interval);
+      const historicalData = await Promise.all(
+        symbols.map((symbol) => fetchHistoricalPricesBinance(symbol, interval))
+      );
 
-      symbols.forEach(async (symbol) => {
+      symbols.forEach(async (symbol, index) => {
         const config = monitoredCryptos[symbol];
+        const data = historicalData[index];
+
         if (!config.historicalPrices[interval]) {
           config.historicalPrices[interval] = [];
+          config.timestamps = [];
         }
 
-        config.historicalPrices[interval].push(...prices[symbol]);
+        // Atualiza os preços e timestamps
+        config.historicalPrices[interval] = data.map((candle) => candle.close);
+        config.timestamps[interval] = data.map((candle) => candle.time);
 
-        if (config.historicalPrices[interval].length > 50)
-          config.historicalPrices[interval] = config.historicalPrices[interval].slice(-50);
-
-        const currentPrice = config.historicalPrices[interval][
-          config.historicalPrices[interval].length - 1
-        ];
+        const currentPrice =
+          config.historicalPrices[interval][
+            config.historicalPrices[interval].length - 1
+          ];
 
         console.log(`Preço atual de ${symbol} (${interval}): $${currentPrice}`);
 
@@ -115,8 +124,6 @@ export const monitorCryptos = async () => {
           fastPeriod: 12,
           slowPeriod: 26,
           signalPeriod: 9,
-          SimpleMAOscillator: false,
-          SimpleMASignal: false,
         });
 
         const bollinger = BollingerBands.calculate({
@@ -132,26 +139,65 @@ export const monitorCryptos = async () => {
           period: 14,
         });
 
+        const rsi = RSI.calculate({
+          values: config.historicalPrices[interval],
+          period: 14,
+        });
+
+        // Gerar gráfico com os timestamps e indicadores
+        await generateCryptoChart(
+          symbol,
+          interval,
+          {
+            timestamps: config.timestamps[interval],
+          },
+          {
+            prices: config.historicalPrices[interval],
+            macd,
+            bollinger,
+            rsi,
+          }
+        );
+
         const macdValue = macd[macd.length - 1];
         const bollingerValue = bollinger[bollinger.length - 1];
         const atrValue = atr[atr.length - 1];
+
+        var sendAlert = false;
 
         if (macdValue && macdValue.histogram > 0) {
           const alertMessage = `🚨 Alerta: ${symbol} em alta (MACD positivo). Preço atual: $${currentPrice}`;
           await sendMessage(process.env.PhoneAlert, alertMessage);
           await sendTelegramMessage(process.env.GuyChatId, alertMessage);
+
+          sendAlert = true;
         }
 
         if (bollingerValue && currentPrice > bollingerValue.upper) {
           const alertMessage = `⚠️ Alerta: ${symbol} ultrapassou a Banda Superior (Bollinger). Preço atual: $${currentPrice}`;
           await sendMessage(process.env.PhoneAlert, alertMessage);
           await sendTelegramMessage(process.env.GuyChatId, alertMessage);
+
+          sendAlert = true;
         }
 
         if (atrValue && atrValue > config.upperLimit - config.lowerLimit) {
           const alertMessage = `⚠️ Alerta: Alta volatilidade em ${symbol} (ATR elevado). Preço atual: $${currentPrice}`;
           await sendMessage(process.env.PhoneAlert, alertMessage);
           await sendTelegramMessage(process.env.GuyChatId, alertMessage);
+
+          sendAlert = true;
+        }
+
+        if (sendAlert) {
+          const imagePath = `./content/${symbol}_${interval}.png`;
+          const caption = `📊 Aqui está o gráfico atualizado para ${symbol}. Verifique os indicadores e tendências!`;
+
+          // Enviar via WhatsApp
+          await sendImage(process.env.PhoneAlert, imagePath, caption);
+
+          // Enviar via Telegram
+          await sendTelegramImage(process.env.GuyChatId, imagePath, caption);
         }
       });
     }
