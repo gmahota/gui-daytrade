@@ -32,12 +32,12 @@ app.listen(PORT, () => {
 });
 
 // Agendamento dos monitores
-cron.schedule('*/5 * * * *', async () => {
-  console.log('Monitorando criptomoedas...');
-  await monitorCryptos();
-});
-
-// cron.schedule('*/10 * * * *', async () => {
-//   console.log('Monitorando Forex e commodities...');
-//   await monitorForexCommodities();
+// cron.schedule('*/5 * * * *', async () => {
+//   console.log('Monitorando criptomoedas...');
+//   await monitorCryptos();
 // });
+
+cron.schedule('*/1 * * * *', async () => {
+  console.log('Monitorando Forex e commodities...');
+  await monitorForexCommodities();
+});
