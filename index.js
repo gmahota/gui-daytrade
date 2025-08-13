@@ -37,7 +37,7 @@ cron.schedule('*/5 * * * *', async () => {
   await monitorCryptos();
 });
 
-cron.schedule('*/15 * * * *', async () => {
+cron.schedule('*/2 * * * *', async () => {
   console.log('Monitorando Forex e commodities...');
   await monitorForexCommodities();
 });

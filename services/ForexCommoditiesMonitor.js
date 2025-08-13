@@ -5,6 +5,25 @@ import { sendTelegramMessage, sendTelegramImage } from "./telegram.js";
 import { generateCryptoChart } from "./chartGenerator.js";
 
 let monitoredForexCommodities = {
+  "GC=F": {
+    // Ouro
+    upperLimit: 2000,
+    lowerLimit: 1800,
+    historicalPrices: {},
+    intervals: ["1d", "15m"],
+  },
+  "AUDUSD=X": {
+    upperLimit: 1.2,
+    lowerLimit: 1.1,
+    historicalPrices: {},
+    intervals: ["1d", "15m"],
+  },
+  "EURAUD=X": {
+    upperLimit: 1.2,
+    lowerLimit: 1.1,
+    historicalPrices: {},
+    intervals: ["1d", "15m"],
+  },
   "EURUSD=X": {
     upperLimit: 1.2,
     lowerLimit: 1.1,
@@ -187,9 +206,9 @@ export const monitorForexCommodities = async () => {
                   const stopLoss =
                     parseFloat(currentPrice) - parseFloat(atrValue) * 1.5;
                   explanation += `- MACD positivo: Tendência de alta detectada. Sugestão de Compra: Entrar acima de $${entryPrice.toFixed(
-                    2
-                  )}, Alvo: $${targetPrice.toFixed(2)}, Stop Loss: $${stopLoss.toFixed(
-                    2
+                    4
+                  )}, Alvo: $${targetPrice.toFixed(4)}, Stop Loss: $${stopLoss.toFixed(
+                    4
                   )}.\n`;
                 }
         
@@ -201,9 +220,9 @@ export const monitorForexCommodities = async () => {
                   const stopLoss =
                     parseFloat(currentPrice) + parseFloat(atrValue) * 1.5;
                   explanation += `- MACD negativo: Tendência de baixa detectada. Sugestão de Venda: Entrar abaixo de $${entryPrice.toFixed(
-                    2
-                  )}, Alvo: $${targetPrice.toFixed(2)}, Stop Loss: $${stopLoss.toFixed(
-                    2
+                    4
+                  )}, Alvo: $${targetPrice.toFixed(4)}, Stop Loss: $${stopLoss.toFixed(
+                    4
                   )}.\n`;
                 }
         
@@ -223,9 +242,7 @@ export const monitorForexCommodities = async () => {
                         2;
                     explanation += `- Preço acima da banda superior (Bollinger): Possível sobrecompra. Sugestão de Consolidação: Entrar acima de $${entryPrice.toFixed(
                       2
-                    )}, Alvo: $${targetPrice.toFixed(
-                      2
-                    )}, Stop Loss: $${stopLoss.toFixed(2)}.\n`;
+                    )}, Alvo: $${targetPrice.toFixed(4)}, Stop Loss: $${stopLoss.toFixed(4)}.\n`;
                   } else if (currentPrice < parseFloat(bollingerValue.lower)) {
                     hasAlert = true;
                     const entryPrice =
@@ -240,9 +257,9 @@ export const monitorForexCommodities = async () => {
                         parseFloat(bollingerValue.lower)) /
                         2;
                     explanation += `- Preço abaixo da banda inferior (Bollinger): Possível sobrevenda. Sugestão de Consolidação: Entrar abaixo de $${entryPrice.toFixed(
-                      2
+                      4
                     )}, Alvo: $${targetPrice.toFixed(
-                      2
+                      4
                     )}, Stop Loss: $${stopLoss.toFixed(2)}.\n`;
                   }
                 }
@@ -255,11 +272,11 @@ export const monitorForexCommodities = async () => {
                   const stopLoss =
                     parseFloat(currentPrice) + parseFloat(atrValue) * 1.5;
                   explanation += `- RSI elevado (${rsiValue.toFixed(
-                    2
+                    4
                   )}): Mercado em sobrecompra. Sugestão de Venda: Entrar abaixo de $${entryPrice.toFixed(
-                    2
+                    4
                   )}, Alvo: $${targetPrice.toFixed(2)}, Stop Loss: $${stopLoss.toFixed(
-                    2
+                    4
                   )}.\n`;
                 }
         
@@ -271,12 +288,11 @@ export const monitorForexCommodities = async () => {
                   const stopLoss =
                     parseFloat(currentPrice) - parseFloat(atrValue) * 1.5;
                   explanation += `- RSI baixo (${rsiValue.toFixed(
-                    2
+                    4
                   )}): Mercado em sobrevenda. Sugestão de Compra: Entrar acima de $${entryPrice.toFixed(
-                    2
+                    4
                   )}, Alvo: $${targetPrice.toFixed(2)}, Stop Loss: $${stopLoss.toFixed(
-                    2
-                  )}.\n`;
+                    4                  )}.\n`;
                 }
         
                 if (atrValue && atrValue > config.upperLimit - config.lowerLimit) {
@@ -297,11 +313,11 @@ export const monitorForexCommodities = async () => {
                     `- MACD: ${macdValue?.histogram?.toFixed(2)}\n` +
                     `- Bollinger Bands: Superior - $${parseFloat(
                       bollingerValue?.upper
-                    ).toFixed(2)}, Inferior - $${parseFloat(
+                    ).toFixed(4)}, Inferior - $${parseFloat(
                       bollingerValue?.lower
-                    ).toFixed(2)}\n` +
-                    `- RSI: ${rsiValue?.toFixed(2)}\n` +
-                    `- ATR: ${atrValue?.toFixed(2)}\n`;
+                    ).toFixed(4)}\n` +
+                    `- RSI: ${rsiValue?.toFixed(4)}\n` +
+                    `- ATR: ${atrValue?.toFixed(4)}\n`;
         
                   // Defina o caminho para o gráfico gerado
                   const imagePath = `./content/${symbol}_${interval}.png`;
